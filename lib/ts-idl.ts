@@ -14,31 +14,6 @@ export type AnchorProgram = {
   },
   "instructions": [
     {
-      "name": "closeCampaign",
-      "discriminator": [
-        65,
-        49,
-        110,
-        7,
-        63,
-        238,
-        206,
-        77
-      ],
-      "accounts": [
-        {
-          "name": "campaign",
-          "writable": true
-        },
-        {
-          "name": "creator",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "contribute",
       "discriminator": [
         82,

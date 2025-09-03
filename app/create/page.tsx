@@ -14,9 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useProgram } from "@/lib/hooks"
-import { PublicKey } from "@solana/web3.js"
+import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js"
 import * as anchor from "@coral-xyz/anchor";
 import { supabase } from "@/lib/supabase"
+import { useWallet } from "@solana/wallet-adapter-react"
 
 
 const categories = [
@@ -46,30 +47,44 @@ export default function CreateCampaign() {
     walletAddress: "",
   });
   const program = useProgram();
-
+  const wallet = useWallet();
   function validateStep(formData: any, step: number): string | null {
     switch (step) {
       case 1:
         if (!formData.title.trim()) return "Title is required";
         if (!formData.shortDescription.trim()) return "Short description is required";
         break;
+
       case 2:
         if (!formData.longDescription.trim()) return "Long description is required";
         if (!formData.category.trim()) return "Category is required";
         break;
+
       case 3:
-        if (formData.goal <= 0) return "Goal must be greater than 0 SOL";
+        const goalNum = Number(formData.goal);
+
+        if (!Number.isFinite(goalNum)) {
+          return "Goal must be a valid number";
+        }
+        if (goalNum % 1 !== 0) {
+          return "Goal amount must be a whole number (no decimals)";
+        }
+        if (goalNum < 1) {
+          return "Goal must be at least 1 SOL";
+        }
 
         const deadlineTs = new Date(formData.deadline).getTime();
         if (isNaN(deadlineTs) || deadlineTs <= Date.now())
           return "Deadline must be a valid date in the future";
         break;
+
       case 4:
         if (!formData.creatorName.trim()) return "Creator name is required";
         if (!formData.creatorBio.trim()) return "Creator bio is required";
         if (!formData.walletAddress.trim()) return "Wallet address is required";
         if (!formData.image) return "Project image is required";
         break;
+
       default:
         return null;
     }
@@ -77,12 +92,13 @@ export default function CreateCampaign() {
   }
 
   async function createCampaign() {
-
-    if (!program) {
-      console.error("❌ Program Now Found");
+    if (!program || !wallet.publicKey) {
+      console.error("❌ Program Not Found or wallet is missing");
       return;
     }
-    const deadlineTimestamp = Math.floor(new Date(formData.deadline).getTime() / 1000);
+
+    // const deadlineTimestamp = Math.floor(new Date(formData.deadline).getTime() / 1000);
+    const deadlineTimestamp = Math.floor(Date.now() / 1000) + 100;
 
     const provider = program.provider as any;
 
@@ -91,38 +107,62 @@ export default function CreateCampaign() {
       program.programId
     );
 
-    await program.methods
-      .createCampaign(new anchor.BN(formData.goal), new anchor.BN(deadlineTimestamp))
-      .accounts({
-        creator: provider.wallet.publicKey,
-        campaign: campaignPda,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-
-    const { data, error: dbError } = await supabase
+    const { data: existing, error: fetchError } = await supabase
       .from("campaigns")
-      .insert({
-        pda: campaignPda.toBase58(),
-        creator: provider.wallet.publicKey.toBase58(),
-        title: formData.title,
-        short_description: formData.shortDescription,
-        long_description: formData.longDescription,
-        category: formData.category,
-        goal: formData.goal,
-        deadline: deadlineTimestamp,
-        creatorname: formData.creatorName,
-        creatorbio: formData.creatorBio,
-      })
-      .select();
+      .select("id")
+      .eq("creator", wallet.publicKey.toBase58())
+      .maybeSingle();
 
-    if (dbError) {
-      console.log("Supabase error:", dbError);
-      alert("Failed to save campaign to database");
-    } else {
-      console.log("✅ Campaign saved to Supabase:", data);
+    if (fetchError) {
+      console.error("Supabase fetch error:", fetchError);
+      alert("Something went wrong while checking existing campaigns.");
+      return;
+    }
+
+    if (existing) {
+      alert("⚠️ Campaign with this wallet already exists. Please use another wallet.");
+      return;
+    }
+
+    try {
+      await program.methods
+        .createCampaign(new anchor.BN(formData.goal * LAMPORTS_PER_SOL), new anchor.BN(deadlineTimestamp))
+        .accounts({
+          creator: provider.wallet.publicKey,
+          campaign: campaignPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+
+      const { data, error: dbError } = await supabase
+        .from("campaigns")
+        .insert({
+          pda: campaignPda.toBase58(),
+          creator: provider.wallet.publicKey.toBase58(),
+          title: formData.title,
+          short_description: formData.shortDescription,
+          long_description: formData.longDescription,
+          category: formData.category,
+          goal: formData.goal,
+          deadline: deadlineTimestamp,
+          creatorname: formData.creatorName,
+          creatorbio: formData.creatorBio,
+          receiver: formData.walletAddress,
+        })
+        .select();
+
+      if (dbError) {
+        console.log("Supabase error:", dbError);
+        alert("Failed to save campaign to database");
+      } else {
+        console.log("✅ Campaign saved to Supabase:", data);
+      }
+    } catch (err) {
+      console.error("Transaction failed:", err);
+      alert("Failed to create campaign. Check console for details.");
     }
   }
+
 
 
   const totalSteps = 4
@@ -292,26 +332,10 @@ export default function CreateCampaign() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="walletAddress" className="text-foreground">
-                Solana Wallet Address *
-              </Label>
-              <Input
-                id="walletAddress"
-                placeholder="Your Solana wallet address for receiving funds"
-                value={formData.walletAddress}
-                onChange={(e) => handleInputChange("walletAddress", e.target.value)}
-                className="bg-input border-border font-mono text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                This is where funds will be sent if your campaign is successful
-              </p>
-            </div>
-
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Make sure your wallet address is correct. Funds cannot be recovered if sent to an incorrect address.
+                If the campaign is able to reach the goal before the deadline then only the wallet you use to create campaign will be able to withdraw funds .
               </AlertDescription>
             </Alert>
           </div>

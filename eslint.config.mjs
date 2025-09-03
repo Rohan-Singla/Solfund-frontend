@@ -23,6 +23,7 @@ const eslintConfig = [
       "@typescript-eslint/no-explicit-any": "off", // allow 'any'
       "@typescript-eslint/no-unused-vars": "off", // allow unused vars
       "react/no-unescaped-entities": "off", // disable escape warnings for ' " >
+      "@typescript-eslint/ban-ts-comment" : "off"
     },
   },
 ];

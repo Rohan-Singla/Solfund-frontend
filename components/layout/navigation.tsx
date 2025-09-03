@@ -19,6 +19,8 @@ export function Navigation({ className }: NavigationProps) {
   const navItems = [
     { href: "/", label: "Discover", active: pathname === "/" },
     { href: "/create", label: "Create", active: pathname === "/create" },
+    { href: "/completed", label: "Previous Campaigns", active: pathname === "/completed" },
+
   ]
 
   const handleWalletConnect = () => {

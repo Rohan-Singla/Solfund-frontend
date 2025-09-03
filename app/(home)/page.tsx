@@ -30,7 +30,14 @@ export default function CampaignDiscovery() {
       if (error) {
         console.error("Error fetching campaigns:", error)
       } else {
-        setCampaigns(data || [])
+        const now = Math.floor(Date.now() / 1000)
+
+
+        const active = (data || []).filter(
+          (c: any) => c.deadline > now && c.raised < c.goal
+        )
+
+        setCampaigns(active)
       }
       setLoading(false)
     }
